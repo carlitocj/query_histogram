@@ -57,9 +57,12 @@ static bool set_histogram_track_utility(bool newval, bool doit, GucSource source
 #define HOOK_RETURN(a)	return (a);
 #endif
 
-static void query_hist_add_query(time_bin_t duration);
+static void query_hist_add_query(time_bin_t duration, const char *query);
 static bool query_histogram_enabled(void);
 static int get_hist_bin(int bins, int step, time_bin_t duration);
+
+static void add_query_info(time_bin_t duration, const char *query);
+static void reset_query_info(void);
 
 static size_t get_histogram_size(void);
 
@@ -135,6 +138,8 @@ static void explain_ExecutorFinish(QueryDesc *queryDesc);
 
 /* the whole histogram (info and data) */
 static histogram_info_t * shared_histogram_info = NULL;
+
+static histogram_query_info_list_t histogram_query_info_list = {NULL, 0, 0};
 
 /*
  * Module load callback
@@ -364,8 +369,8 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
 {
     if (queryDesc->totaltime && (nesting_level == 0) && query_histogram_enabled())
     {
-        float seconds;
-        
+    	float seconds;
+
         /*
          * Make sure stats accumulation is done.  (Note: it's okay if several
          * levels of hook all do this.)
@@ -383,7 +388,10 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
              * and unlock it again */
             if ((default_histogram_bins > 0) && (rand() % 100 <  default_histogram_sample_pct)) {
                 LWLockAcquire(shared_histogram_info->lock, LW_EXCLUSIVE);
-                query_hist_add_query(seconds);
+//              FILE *arq = fopen("/tmp/trace.txt", "a");
+//				fprintf(arq, "%s\n", queryDesc->sourceText);
+//				fclose(arq);
+                query_hist_add_query(seconds, queryDesc->sourceText);
                 LWLockRelease(shared_histogram_info->lock);
             }
             
@@ -394,7 +402,10 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
             if ((shared_histogram_info->bins > 0) && (rand() % 100 <  shared_histogram_info->sample_pct)) {
                 LWLockRelease(shared_histogram_info->lock);
                 LWLockAcquire(shared_histogram_info->lock, LW_EXCLUSIVE);
-                query_hist_add_query(seconds);
+//              FILE *arq = fopen("/tmp/trace.txt", "a");
+//				fprintf(arq, "%s\n", queryDesc->sourceText);
+//				fclose(arq);
+                query_hist_add_query(seconds, queryDesc->sourceText);
             }
             LWLockRelease(shared_histogram_info->lock);
             
@@ -406,7 +417,6 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
         prev_ExecutorEnd(queryDesc);
     else
         standard_ExecutorEnd(queryDesc);
-    
 }
 
 /*
@@ -474,7 +484,7 @@ queryhist_ProcessUtility(Node *parsetree, const char *queryString,
              * and unlock it again */
             if ((default_histogram_bins > 0) && (rand() % 100 <  default_histogram_sample_pct)) {
                 LWLockAcquire(shared_histogram_info->lock, LW_EXCLUSIVE);
-                query_hist_add_query(seconds);
+                query_hist_add_query(seconds, queryString);
                 LWLockRelease(shared_histogram_info->lock);
             }
             
@@ -485,7 +495,7 @@ queryhist_ProcessUtility(Node *parsetree, const char *queryString,
             if ((shared_histogram_info->bins > 0) && (rand() % 100 <  shared_histogram_info->sample_pct)) {
                 LWLockRelease(shared_histogram_info->lock);
                 LWLockAcquire(shared_histogram_info->lock, LW_EXCLUSIVE);
-                query_hist_add_query(seconds);
+                query_hist_add_query(seconds, queryString);
             }
             LWLockRelease(shared_histogram_info->lock);
             
@@ -720,17 +730,21 @@ void query_hist_reset(bool locked) {
         LWLockRelease(shared_histogram_info->lock);
     }
 
+    reset_query_info();
+
 }
 
 /* needs to be already locked */
 static
-void query_hist_add_query(time_bin_t duration) {
+void query_hist_add_query(time_bin_t duration, const char *query) {
     
     int bin = get_hist_bin(shared_histogram_info->bins, shared_histogram_info->step, duration);
     
     shared_histogram_info->count_bins[bin] += 1;
     shared_histogram_info->time_bins[bin] += duration;
     
+    add_query_info(duration, query);
+
 }
 
 static int get_hist_bin(int bins, int step, time_bin_t duration) {
@@ -816,6 +830,14 @@ histogram_data * query_hist_get_data(bool scale) {
     
     /* release the lock */
     LWLockRelease(shared_histogram_info->lock);
+
+    FILE *file = fopen("/tmp/trace.txt", "w");
+    for (int i = 0; i < histogram_query_info_list.items_count; i++) {
+    	fprintf(file, "######################################################\n");
+    	fprintf(file, "QUERY: %s\n", histogram_query_info_list.query_info_list[i].query);
+    	fprintf(file, "DURATION: %f\n", histogram_query_info_list.query_info_list[i].duration);
+    }
+    fclose(file);
 
     return tmp;
 
@@ -1002,4 +1024,29 @@ bool query_histogram_enabled() {
     
     return true;
     
+}
+
+static
+void add_query_info(time_bin_t duration, const char *query) {
+
+	if (histogram_query_info_list.list_size == histogram_query_info_list.items_count) {
+		histogram_query_info_list.list_size += 50;
+		histogram_query_info_list.query_info_list = (histogram_query_info_t*) realloc(
+				histogram_query_info_list.query_info_list,
+				histogram_query_info_list.list_size * sizeof(histogram_query_info_t));
+	}
+
+	histogram_query_info_list.query_info_list[histogram_query_info_list.items_count].duration = duration;
+	strncpy(histogram_query_info_list.query_info_list[histogram_query_info_list.items_count].query, query,
+			sizeof(histogram_query_info_list.query_info_list[histogram_query_info_list.items_count].query));
+	histogram_query_info_list.items_count++;
+
+}
+
+static
+void reset_query_info(void) {
+
+	free(histogram_query_info_list.query_info_list);
+	memset(&histogram_query_info_list, '\0', sizeof(histogram_query_info_list_t));
+
 }

@@ -1,0 +1,4 @@
+query_histogram.so
+src/query_histogram.o
+src/queryhist.o
+

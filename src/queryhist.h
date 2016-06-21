@@ -36,6 +36,21 @@ typedef struct histogram_data {
     
 } histogram_data;
 
+typedef struct histogram_query_info_t {
+
+    char query[1000];
+    time_bin_t duration;
+
+} histogram_query_info_t;
+
+typedef struct histogram_query_info_list_t {
+
+    histogram_query_info_t *query_info_list;
+    unsigned int items_count;
+    unsigned int list_size;
+
+} histogram_query_info_list_t;
+
 /* shared segment struct with histogram info (initialized in
  * shmem_startup) */
 typedef struct histogram_info_t {
