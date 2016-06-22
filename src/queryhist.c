@@ -826,14 +826,6 @@ histogram_data * query_hist_get_data(bool scale) {
     /* release the lock */
     LWLockRelease(shared_histogram_info->lock);
 
-//    FILE *file = fopen("/tmp/trace.txt", "w");
-//    for (int i = 0; i < histogram_query_info_list.items_count; i++) {
-//    	fprintf(file, "######################################################\n");
-//    	fprintf(file, "QUERY: %s\n", histogram_query_info_list.query_info_list[i].query);
-//    	fprintf(file, "DURATION: %f\n", histogram_query_info_list.query_info_list[i].duration);
-//    }
-//    fclose(file);
-
     return tmp;
 
 }
