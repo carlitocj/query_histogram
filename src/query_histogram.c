@@ -7,8 +7,9 @@
 #include "postgres.h"
 #include "queryhist.h"
 #include "fmgr.h"
-
 #include "funcapi.h"
+
+#include "utils/builtins.h"
 
 #if (PG_VERSION_NUM >= 90300)
 #include "access/htup_details.h"
@@ -158,7 +159,85 @@ query_histogram(PG_FUNCTION_ARGS)
 Datum
 query_histogram_detailed(PG_FUNCTION_ARGS)
 {
-    PG_RETURN_VOID();
+	FuncCallContext *funcctx;
+	TupleDesc       tupdesc;
+	AttInMetadata   *attinmeta;
+	histogram_query_info_list_t *data;
+
+	/* init on the first call */
+	if (SRF_IS_FIRSTCALL()) {
+
+		MemoryContext oldcontext;
+
+		funcctx = SRF_FIRSTCALL_INIT();
+		oldcontext = MemoryContextSwitchTo(funcctx->multi_call_memory_ctx);
+
+		data = get_query_info();
+
+		/* init (open file, etc.), maybe read all the data in memory
+		 * so that the file is not kept open for a long time */
+		funcctx->user_fctx = data;
+		funcctx->max_calls = data->items_count;
+
+		/* Build a tuple descriptor for our result type */
+		if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE)
+			ereport(ERROR,
+					(errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+					 errmsg("function returning record called in context "
+							"that cannot accept type record")));
+
+		/*
+		 * generate attribute metadata needed later to produce tuples from raw
+		 * C strings
+		 */
+		attinmeta = TupleDescGetAttInMetadata(tupdesc);
+		funcctx->attinmeta = attinmeta;
+		funcctx->tuple_desc = tupdesc;
+
+		/* switch back to the old context */
+		MemoryContextSwitchTo(oldcontext);
+
+	}
+
+	/* init the context */
+	funcctx = SRF_PERCALL_SETUP();
+
+	/* check if we have more data */
+	if (funcctx->max_calls > funcctx->call_cntr)
+	{
+		HeapTuple       tuple;
+		Datum           result;
+		Datum           values[2];
+		bool            nulls[2];
+
+		int binIdx;
+
+		binIdx = funcctx->call_cntr;
+
+		data = (histogram_query_info_list_t*)funcctx->user_fctx;
+
+		memset(nulls, 0, sizeof(nulls));
+
+
+		values[0] = CStringGetTextDatum(data->query_info_list[binIdx].query);
+		values[1] = Float8GetDatum(data->query_info_list[binIdx].duration * 1000);
+
+		/* Build and return the tuple. */
+		tuple = heap_form_tuple(funcctx->tuple_desc, values, nulls);
+
+		/* make the tuple into a datum */
+		result = HeapTupleGetDatum(tuple);
+
+		/* Here we want to return another item: */
+		SRF_RETURN_NEXT(funcctx, result);
+
+	}
+	else
+	{
+		/* Here we are done returning items and just need to clean up: */
+		SRF_RETURN_DONE(funcctx);
+	}
+
 }
 
 Datum

@@ -78,3 +78,4 @@ typedef struct histogram_info_t {
 histogram_data * query_hist_get_data(bool scale);
 void query_hist_reset(bool locked);
 TimestampTz get_hist_last_reset(void);
+histogram_query_info_list_t * get_query_info(void);

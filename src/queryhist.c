@@ -61,8 +61,9 @@ static void query_hist_add_query(time_bin_t duration, const char *query);
 static bool query_histogram_enabled(void);
 static int get_hist_bin(int bins, int step, time_bin_t duration);
 
-static void add_query_info(time_bin_t duration, const char *query);
+static void add_query_info(const time_bin_t duration, const char *query);
 static void reset_query_info(void);
+static void replace_char(char string[], const char old_ch, const char new_ch);
 
 static size_t get_histogram_size(void);
 
@@ -388,9 +389,6 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
              * and unlock it again */
             if ((default_histogram_bins > 0) && (rand() % 100 <  default_histogram_sample_pct)) {
                 LWLockAcquire(shared_histogram_info->lock, LW_EXCLUSIVE);
-//              FILE *arq = fopen("/tmp/trace.txt", "a");
-//				fprintf(arq, "%s\n", queryDesc->sourceText);
-//				fclose(arq);
                 query_hist_add_query(seconds, queryDesc->sourceText);
                 LWLockRelease(shared_histogram_info->lock);
             }
@@ -402,9 +400,6 @@ explain_ExecutorEnd(QueryDesc *queryDesc)
             if ((shared_histogram_info->bins > 0) && (rand() % 100 <  shared_histogram_info->sample_pct)) {
                 LWLockRelease(shared_histogram_info->lock);
                 LWLockAcquire(shared_histogram_info->lock, LW_EXCLUSIVE);
-//              FILE *arq = fopen("/tmp/trace.txt", "a");
-//				fprintf(arq, "%s\n", queryDesc->sourceText);
-//				fclose(arq);
                 query_hist_add_query(seconds, queryDesc->sourceText);
             }
             LWLockRelease(shared_histogram_info->lock);
@@ -831,13 +826,13 @@ histogram_data * query_hist_get_data(bool scale) {
     /* release the lock */
     LWLockRelease(shared_histogram_info->lock);
 
-    FILE *file = fopen("/tmp/trace.txt", "w");
-    for (int i = 0; i < histogram_query_info_list.items_count; i++) {
-    	fprintf(file, "######################################################\n");
-    	fprintf(file, "QUERY: %s\n", histogram_query_info_list.query_info_list[i].query);
-    	fprintf(file, "DURATION: %f\n", histogram_query_info_list.query_info_list[i].duration);
-    }
-    fclose(file);
+//    FILE *file = fopen("/tmp/trace.txt", "w");
+//    for (int i = 0; i < histogram_query_info_list.items_count; i++) {
+//    	fprintf(file, "######################################################\n");
+//    	fprintf(file, "QUERY: %s\n", histogram_query_info_list.query_info_list[i].query);
+//    	fprintf(file, "DURATION: %f\n", histogram_query_info_list.query_info_list[i].duration);
+//    }
+//    fclose(file);
 
     return tmp;
 
@@ -1027,7 +1022,9 @@ bool query_histogram_enabled() {
 }
 
 static
-void add_query_info(time_bin_t duration, const char *query) {
+void add_query_info(const time_bin_t duration, const char *query) {
+
+	histogram_query_info_t *current_query_info;
 
 	if (histogram_query_info_list.list_size == histogram_query_info_list.items_count) {
 		histogram_query_info_list.list_size += 50;
@@ -1036,9 +1033,10 @@ void add_query_info(time_bin_t duration, const char *query) {
 				histogram_query_info_list.list_size * sizeof(histogram_query_info_t));
 	}
 
-	histogram_query_info_list.query_info_list[histogram_query_info_list.items_count].duration = duration;
-	strncpy(histogram_query_info_list.query_info_list[histogram_query_info_list.items_count].query, query,
-			sizeof(histogram_query_info_list.query_info_list[histogram_query_info_list.items_count].query));
+	current_query_info = &histogram_query_info_list.query_info_list[histogram_query_info_list.items_count];
+	current_query_info->duration = duration;
+	strncpy(current_query_info->query, query, sizeof(current_query_info->query));
+	replace_char(current_query_info->query, '\n', ' ');
 	histogram_query_info_list.items_count++;
 
 }
@@ -1048,5 +1046,24 @@ void reset_query_info(void) {
 
 	free(histogram_query_info_list.query_info_list);
 	memset(&histogram_query_info_list, '\0', sizeof(histogram_query_info_list_t));
+
+}
+
+histogram_query_info_list_t * get_query_info(void) {
+
+	return &histogram_query_info_list;
+
+}
+
+static
+void replace_char(char string[], const char old_ch, const char new_ch) {
+
+	unsigned int i = 0;
+	while (string[i] != '\0') {
+		if (string[i] == old_ch) {
+			string[i] = new_ch;
+		}
+		i++;
+	}
 
 }

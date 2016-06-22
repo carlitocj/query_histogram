@@ -4,7 +4,7 @@ CREATE OR REPLACE FUNCTION query_histogram( IN scale BOOLEAN DEFAULT TRUE, OUT b
     AS 'MODULE_PATHNAME', 'query_histogram'
     LANGUAGE C IMMUTABLE;
 
-CREATE OR REPLACE FUNCTION query_histogram_detailed(OUT query CHARACTER VARYING, OUT duration DOUBLE PRECISION)
+CREATE OR REPLACE FUNCTION query_histogram_detailed(OUT query TEXT, OUT duration_ms DOUBLE PRECISION)
     RETURNS SETOF record
     AS 'MODULE_PATHNAME', 'query_histogram_detailed'
     LANGUAGE C IMMUTABLE;
